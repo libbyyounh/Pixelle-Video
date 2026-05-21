@@ -1,0 +1,49 @@
+name: Build and Push Docker Image to Tencent Cloud
+
+on:
+  push:
+    branches: [ "main" ]  # 当 main 分支有代码推送时触发构建
+  release:
+    types: [ "published" ] # 当发布 Release 时触发构建
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 设置 Docker Buildx，以便后续可以使用更高级的缓存功能
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # 登录到腾讯云镜像仓库
+    - name: Log in to Tencent Cloud Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ secrets.TENCENT_REGISTRY }}
+        username: ${{ secrets.TENCENT_REGISTRY_USER }}
+        password: ${{ secrets.TENCENT_REGISTRY_PASSWORD }}
+
+    # 提取元数据（利用 vars 动态拼接腾讯云镜像完整路径）
+    - name: Extract Docker metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ secrets.TENCENT_REGISTRY }}/${{ vars.TENCENT_NAMESPACE }}/pixelle-video
+        tags: |
+          type=raw,value=latest
+          type=semver,pattern={{version}}
+
+    # 构建并推送镜像（利用 GitHub Actions 缓存加速 Playwright/Pip 下载）
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha  # 使用 GitHub Actions 内置的缓存机制
+        cache-to: type=gha,mode=max
